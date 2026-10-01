@@ -259,3 +259,6 @@ paket-files/
 
 # Packages XML Configuration file
 packages.config
+
+# Local build and test outputs
+artifacts/

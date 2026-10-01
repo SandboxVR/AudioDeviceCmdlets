@@ -29,15 +29,49 @@ using System.Runtime.InteropServices;
 namespace CoreAudioApi
 {
 
-    public class AudioEndpointVolume : IDisposable
+    public class AudioEndpointVolume : ComObject
     {
-        private IAudioEndpointVolume _AudioEndPointVolume;
+        internal IAudioEndpointVolume EndpointInterface { get { return GetInterface<IAudioEndpointVolume>(); } }
+        private IAudioEndpointVolume _AudioEndPointVolume { get { return EndpointInterface; } }
         private AudioEndpointVolumeChannels _Channels;
         private AudioEndpointVolumeStepInformation _StepInformation;
         private AudioEndPointVolumeVolumeRange _VolumeRange;
         private EEndpointHardwareSupport _HardwareSupport;
         private AudioEndpointVolumeCallback _CallBack;
-        public  event AudioEndpointVolumeNotificationDelegate OnVolumeNotification;
+        private AudioEndpointVolumeNotificationDelegate _OnVolumeNotification;
+        private readonly object _NotificationLock = new object();
+
+        public event AudioEndpointVolumeNotificationDelegate OnVolumeNotification
+        {
+            add
+            {
+                lock (_NotificationLock)
+                {
+                    ThrowIfDisposed();
+                    if (value == null) return;
+                    if (_CallBack == null)
+                    {
+                        AudioEndpointVolumeCallback callback = new AudioEndpointVolumeCallback(this);
+                        Marshal.ThrowExceptionForHR(_AudioEndPointVolume.RegisterControlChangeNotify(callback));
+                        _CallBack = callback;
+                    }
+                    _OnVolumeNotification += value;
+                }
+            }
+            remove
+            {
+                lock (_NotificationLock)
+                {
+                    ThrowIfDisposed();
+                    _OnVolumeNotification -= value;
+                    if (_OnVolumeNotification == null && _CallBack != null)
+                    {
+                        Marshal.ThrowExceptionForHR(_AudioEndPointVolume.UnregisterControlChangeNotify(_CallBack));
+                        _CallBack = null;
+                    }
+                }
+            }
+        }
 
         public AudioEndPointVolumeVolumeRange VolumeRange
         {
@@ -115,21 +149,26 @@ namespace CoreAudioApi
             Marshal.ThrowExceptionForHR(_AudioEndPointVolume.VolumeStepDown(Guid.Empty));
         }
         internal AudioEndpointVolume(IAudioEndpointVolume realEndpointVolume)
+            : base(realEndpointVolume)
         {
             uint HardwareSupp;
-
-            _AudioEndPointVolume = realEndpointVolume;
-            _Channels = new AudioEndpointVolumeChannels(_AudioEndPointVolume);
-            _StepInformation = new AudioEndpointVolumeStepInformation(_AudioEndPointVolume);
-            Marshal.ThrowExceptionForHR(_AudioEndPointVolume.QueryHardwareSupport(out HardwareSupp));
-            _HardwareSupport = (EEndpointHardwareSupport)HardwareSupp;
-            _VolumeRange = new AudioEndPointVolumeVolumeRange(_AudioEndPointVolume);
-            _CallBack = new AudioEndpointVolumeCallback(this);
-            Marshal.ThrowExceptionForHR(_AudioEndPointVolume.RegisterControlChangeNotify( _CallBack));
+            try
+            {
+                _Channels = new AudioEndpointVolumeChannels(this);
+                _StepInformation = new AudioEndpointVolumeStepInformation(_AudioEndPointVolume);
+                Marshal.ThrowExceptionForHR(_AudioEndPointVolume.QueryHardwareSupport(out HardwareSupp));
+                _HardwareSupport = (EEndpointHardwareSupport)HardwareSupp;
+                _VolumeRange = new AudioEndPointVolumeVolumeRange(_AudioEndPointVolume);
+            }
+            catch
+            {
+                Dispose();
+                throw;
+            }
         }
         internal void FireNotification(AudioVolumeNotificationData NotificationData)
         {
-            AudioEndpointVolumeNotificationDelegate del = OnVolumeNotification;
+            AudioEndpointVolumeNotificationDelegate del = _OnVolumeNotification;
             if (del != null)
             {
                 del(NotificationData);
@@ -137,18 +176,29 @@ namespace CoreAudioApi
         }
         #region IDisposable Members
 
-        public void Dispose()
+        protected override void DisposeResources()
         {
-            if (_CallBack != null)
+            lock (_NotificationLock)
             {
-                Marshal.ThrowExceptionForHR(_AudioEndPointVolume.UnregisterControlChangeNotify( _CallBack ));
-                _CallBack = null;
+                try
+                {
+                    if (_CallBack != null)
+                        Marshal.ThrowExceptionForHR(_AudioEndPointVolume.UnregisterControlChangeNotify(_CallBack));
+                }
+                finally
+                {
+                    _CallBack = null;
+                    _OnVolumeNotification = null;
+                    _Channels = null;
+                }
             }
         }
 
         ~AudioEndpointVolume()
         {
-            Dispose();
+            // A callback holds only a weak reference, so abandoned subscriptions
+            // can reach this finalizer. Never throw on the finalizer thread.
+            try { Dispose(); } catch { }
         }
 
         #endregion

@@ -27,10 +27,10 @@ using System.Runtime.InteropServices;
 
 namespace CoreAudioApi
 {
-    public class MMDevice
+    public class MMDevice : ComObject
     {
         #region Variables
-        private IMMDevice _RealDevice;
+        private IMMDevice _RealDevice { get { return GetInterface<IMMDevice>(); } }
         private PropertyStore _PropertyStore;
         private AudioMeterInformation _AudioMeterInformation;
         private AudioEndpointVolume _AudioEndpointVolume;
@@ -48,28 +48,28 @@ namespace CoreAudioApi
         private void GetPropertyInformation()
         {
             IPropertyStore propstore;
-            Marshal.ThrowExceptionForHR(_RealDevice.OpenPropertyStore(EStgmAccess.STGM_READ, out propstore));
+            propstore = CheckResult(_RealDevice.OpenPropertyStore(EStgmAccess.STGM_READ, out propstore), propstore);
             _PropertyStore = new PropertyStore(propstore);
         }
 
         private void GetAudioSessionManager()
         {
             object result;
-            Marshal.ThrowExceptionForHR(_RealDevice.Activate(ref IID_IAudioSessionManager, CLSCTX.ALL, IntPtr.Zero, out result));
+            result = CheckResult(_RealDevice.Activate(ref IID_IAudioSessionManager, CLSCTX.ALL, IntPtr.Zero, out result), result);
             _AudioSessionManager = new AudioSessionManager(result as IAudioSessionManager2);
         }
 
         private void GetAudioMeterInformation()
         {
             object result;
-            Marshal.ThrowExceptionForHR( _RealDevice.Activate(ref IID_IAudioMeterInformation, CLSCTX.ALL, IntPtr.Zero, out result));
+            result = CheckResult( _RealDevice.Activate(ref IID_IAudioMeterInformation, CLSCTX.ALL, IntPtr.Zero, out result), result);
             _AudioMeterInformation = new AudioMeterInformation( result as IAudioMeterInformation);
         }
 
         private void GetAudioEndpointVolume()
         {
             object result;
-            Marshal.ThrowExceptionForHR(_RealDevice.Activate(ref IID_IAudioEndpointVolume, CLSCTX.ALL, IntPtr.Zero, out result));
+            result = CheckResult(_RealDevice.Activate(ref IID_IAudioEndpointVolume, CLSCTX.ALL, IntPtr.Zero, out result), result);
             _AudioEndpointVolume = new AudioEndpointVolume(result as IAudioEndpointVolume);
         }
 
@@ -81,6 +81,7 @@ namespace CoreAudioApi
         {
             get
             {
+                ThrowIfDisposed();
                 if (_AudioSessionManager == null)
                     GetAudioSessionManager();
 
@@ -92,6 +93,7 @@ namespace CoreAudioApi
         {
             get
             {
+                ThrowIfDisposed();
                 if (_AudioMeterInformation == null)
                     GetAudioMeterInformation();
 
@@ -103,6 +105,7 @@ namespace CoreAudioApi
         {
             get
             {
+                ThrowIfDisposed();
                 if (_AudioEndpointVolume == null)
                     GetAudioEndpointVolume();
 
@@ -114,6 +117,7 @@ namespace CoreAudioApi
         {
             get
             {
+                ThrowIfDisposed();
                 if (_PropertyStore == null)
                     GetPropertyInformation();
                 return _PropertyStore;
@@ -124,6 +128,7 @@ namespace CoreAudioApi
         {
             get
             {
+                ThrowIfDisposed();
                 if (_PropertyStore == null)
                     GetPropertyInformation();
                 if (_PropertyStore.Contains(PKEY.PKEY_DeviceInterface_FriendlyName))
@@ -152,7 +157,7 @@ namespace CoreAudioApi
             {
                 EDataFlow Result;
                 IMMEndpoint ep =  _RealDevice as IMMEndpoint ;
-                ep.GetDataFlow(out Result);
+                Marshal.ThrowExceptionForHR(ep.GetDataFlow(out Result));
                 return Result;
             }
         }
@@ -171,10 +176,23 @@ namespace CoreAudioApi
 
         #region Constructor
         internal MMDevice(IMMDevice realDevice)
+            : base(realDevice)
         {
-            _RealDevice = realDevice;
+
         }
         #endregion
 
+
+        protected override void DisposeResources()
+        {
+            try { DisposeAll(_AudioEndpointVolume, _AudioMeterInformation, _AudioSessionManager, _PropertyStore); }
+            finally
+            {
+                _AudioEndpointVolume = null;
+                _AudioMeterInformation = null;
+                _AudioSessionManager = null;
+                _PropertyStore = null;
+            }
+        }
     }
 }

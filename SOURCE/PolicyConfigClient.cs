@@ -11,23 +11,14 @@ namespace CoreAudioApi
     {
     }
 
-    public class PolicyConfigClient
+    public class PolicyConfigClient : ComObject
     {
-        private readonly IPolicyConfig _PolicyConfig;
-        private readonly IPolicyConfigVista _PolicyConfigVista;
-        private readonly IPolicyConfig10 _PolicyConfig10;
+        private IPolicyConfig _PolicyConfig { get { return GetInterface<object>() as IPolicyConfig; } }
+        private IPolicyConfigVista _PolicyConfigVista { get { return GetInterface<object>() as IPolicyConfigVista; } }
+        private IPolicyConfig10 _PolicyConfig10 { get { return GetInterface<object>() as IPolicyConfig10; } }
 
-        public PolicyConfigClient()
+        public PolicyConfigClient() : base(new _PolicyConfigClient())
         {
-            _PolicyConfig = new _PolicyConfigClient() as IPolicyConfig;
-            if (_PolicyConfig != null)
-                return;
-
-            _PolicyConfigVista = new _PolicyConfigClient() as IPolicyConfigVista;
-            if (_PolicyConfigVista != null)
-                return;
-
-            _PolicyConfig10 = new _PolicyConfigClient() as IPolicyConfig10;
         }
 
         public void SetDefaultEndpoint(string devID, ERole eRole)

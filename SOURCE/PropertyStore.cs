@@ -30,9 +30,9 @@ namespace CoreAudioApi
     /// <summary>
     /// Property Store class, only supports reading properties at the moment.
     /// </summary>
-    public class PropertyStore
+    public class PropertyStore : ComObject
     {
-        private IPropertyStore _Store;
+        private IPropertyStore _Store { get { return GetInterface<IPropertyStore>(); } }
 
         public int Count
         {
@@ -48,10 +48,8 @@ namespace CoreAudioApi
         {
             get
             {
-                PropVariant result;
                 PropertyKey key = Get(index);
-                Marshal.ThrowExceptionForHR(_Store.GetValue(ref key, out result));
-                return new PropertyStoreProperty(key, result);
+                return new PropertyStoreProperty(key, ReadValue(key));
             }
         }
 
@@ -70,14 +68,12 @@ namespace CoreAudioApi
         {
             get
             {
-                PropVariant result;
                 for (int i = 0; i < Count; i++)
                 {
                     PropertyKey key = Get(i);
                     if (key.fmtid == guid)
                     {
-                        Marshal.ThrowExceptionForHR(_Store.GetValue(ref key, out result));
-                        return new PropertyStoreProperty(key, result);
+                        return new PropertyStoreProperty(key, ReadValue(key));
                     }
                 }
                 return null;
@@ -91,12 +87,25 @@ namespace CoreAudioApi
             return key;
         }
 
+        // The caller owns this raw variant and must Dispose it once.
         public PropVariant GetValue(int index)
         {
-            PropVariant result;
-            PropertyKey key = Get(index);
-            Marshal.ThrowExceptionForHR(_Store.GetValue(ref key, out result));
-            return result;
+            return ReadValue(Get(index));
+        }
+
+        private PropVariant ReadValue(PropertyKey key)
+        {
+            PropVariant result = new PropVariant();
+            try
+            {
+                Marshal.ThrowExceptionForHR(_Store.GetValue(ref key, out result));
+                return result;
+            }
+            catch
+            {
+                result.Dispose();
+                throw;
+            }
         }
 
         public bool Contains(PropertyKey compareKey)
@@ -114,14 +123,12 @@ namespace CoreAudioApi
         {
             get
             {
-                PropVariant result;
                 for (int i = 0; i < Count; i++)
                 {
                     PropertyKey key = Get(i);
                     if (key.fmtid == queryKey.fmtid && key.pid == queryKey.pid)
                     {
-                        Marshal.ThrowExceptionForHR(_Store.GetValue(ref key, out result));
-                        return new PropertyStoreProperty(key, result);
+                        return new PropertyStoreProperty(key, ReadValue(key));
                     }
                 }
                 return null;
@@ -129,8 +136,9 @@ namespace CoreAudioApi
         }
 
         internal PropertyStore(IPropertyStore store)
+            : base(store)
         {
-            _Store = store;
+
         }
     }
 }

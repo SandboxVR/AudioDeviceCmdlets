@@ -30,8 +30,17 @@ using CoreAudioApi.Interfaces;
 namespace CoreAudioApi
 {
     [StructLayout(LayoutKind.Explicit)]
-    public struct PropVariant
+    public struct PropVariant : IDisposable
     {
+        [DllImport("ole32.dll")]
+        private static extern int PropVariantClear(ref PropVariant value);
+
+        // This struct owns native storage. Do not dispose more than one copy.
+        public void Dispose()
+        {
+            Marshal.ThrowExceptionForHR(PropVariantClear(ref this));
+        }
+
         [FieldOffset(0)] short vt;
         [FieldOffset(2)] short wReserved1;
         [FieldOffset(4)] short wReserved2;
@@ -47,8 +56,10 @@ namespace CoreAudioApi
         [FieldOffset(8)] float fltVal;
         [FieldOffset(8)] double dblVal;
         [FieldOffset(8)] Blob blobVal;
-        [FieldOffset(8)] DateTime date;
-        [FieldOffset(8)] bool boolVal;
+        // Native DATE is a double; DateTime triggers OLE date conversion even
+        // when this union actually contains a string pointer.
+        [FieldOffset(8)] double date;
+        [FieldOffset(8)] short boolVal;
         [FieldOffset(8)] int scode;
         [FieldOffset(8)] System.Runtime.InteropServices.ComTypes.FILETIME filetime;
         [FieldOffset(8)] IntPtr everything_else;

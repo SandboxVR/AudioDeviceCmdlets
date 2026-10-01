@@ -31,12 +31,13 @@ namespace CoreAudioApi
     public class AudioEndpointVolumeChannel
     {
         private uint _Channel;
-        private IAudioEndpointVolume _AudioEndpointVolume;
+        private AudioEndpointVolume _Parent;
+        private IAudioEndpointVolume _AudioEndpointVolume { get { return _Parent.EndpointInterface; } }
 
-        internal AudioEndpointVolumeChannel(IAudioEndpointVolume parent, int channel)
+        internal AudioEndpointVolumeChannel(AudioEndpointVolume parent, int channel)
         {
             _Channel = (uint)channel;
-            _AudioEndpointVolume = parent;
+            _Parent = parent;
         }
 
         public float VolumeLevel

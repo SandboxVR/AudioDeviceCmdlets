@@ -28,16 +28,18 @@ using System.Runtime.InteropServices;
 
 namespace CoreAudioApi
 {
-    public class AudioSessionControl 
+    public class AudioSessionControl : ComObject
     {
-        internal IAudioSessionControl2 _AudioSessionControl;
+        private IAudioSessionControl2 _AudioSessionControl { get { return GetInterface<IAudioSessionControl2>(); } }
         internal AudioMeterInformation _AudioMeterInformation;
         internal SimpleAudioVolume _SimpleAudioVolume;
+        private readonly List<IAudioSessionEvents> _EventConsumers = new List<IAudioSessionEvents>();
 
         public AudioMeterInformation AudioMeterInformation
         {
             get
             {
+                ThrowIfDisposed();
                 return _AudioMeterInformation;
             }
         }
@@ -46,31 +48,41 @@ namespace CoreAudioApi
         {
             get
             {
+                ThrowIfDisposed();
                 return _SimpleAudioVolume;
             }
         }
 
 
         internal AudioSessionControl(IAudioSessionControl2 realAudioSessionControl)
+            : base(realAudioSessionControl)
         {
-            IAudioMeterInformation _meters = realAudioSessionControl as IAudioMeterInformation;
-            ISimpleAudioVolume _volume = realAudioSessionControl as ISimpleAudioVolume; 
-            if (_meters != null)
-                _AudioMeterInformation = new CoreAudioApi.AudioMeterInformation(_meters);
-            if (_volume != null)
-                _SimpleAudioVolume = new SimpleAudioVolume(_volume);
-            _AudioSessionControl = realAudioSessionControl;
-            
+            try
+            {
+                IAudioMeterInformation _meters = realAudioSessionControl as IAudioMeterInformation;
+                ISimpleAudioVolume _volume = realAudioSessionControl as ISimpleAudioVolume;
+                if (_meters != null)
+                    _AudioMeterInformation = new CoreAudioApi.AudioMeterInformation(_meters, false);
+                if (_volume != null)
+                    _SimpleAudioVolume = new SimpleAudioVolume(_volume, false);
+            }
+            catch
+            {
+                Dispose();
+                throw;
+            }
         }
 
         public void RegisterAudioSessionNotification(IAudioSessionEvents eventConsumer)
         {
-             Marshal.ThrowExceptionForHR(_AudioSessionControl.RegisterAudioSessionNotification(eventConsumer));
+            Marshal.ThrowExceptionForHR(_AudioSessionControl.RegisterAudioSessionNotification(eventConsumer));
+            if (!_EventConsumers.Contains(eventConsumer)) _EventConsumers.Add(eventConsumer);
         }
 
         public void UnregisterAudioSessionNotification(IAudioSessionEvents eventConsumer)
         {
             Marshal.ThrowExceptionForHR(_AudioSessionControl.UnregisterAudioSessionNotification(eventConsumer));
+            _EventConsumers.Remove(eventConsumer);
         }
 
         public AudioSessionState State
@@ -87,11 +99,16 @@ namespace CoreAudioApi
         {
             get
             {
-                IntPtr NamePtr;
-                Marshal.ThrowExceptionForHR(_AudioSessionControl.GetDisplayName(out NamePtr));
-                string res = Marshal.PtrToStringAuto(NamePtr);
-                Marshal.FreeCoTaskMem(NamePtr);
-                return res;
+                IntPtr NamePtr = IntPtr.Zero;
+                try
+                {
+                    Marshal.ThrowExceptionForHR(_AudioSessionControl.GetDisplayName(out NamePtr));
+                    return Marshal.PtrToStringUni(NamePtr);
+                }
+                finally
+                {
+                    Marshal.FreeCoTaskMem(NamePtr);
+                }
             }
         }
 
@@ -99,11 +116,16 @@ namespace CoreAudioApi
         {
             get
             {
-                IntPtr NamePtr;
-                Marshal.ThrowExceptionForHR(_AudioSessionControl.GetIconPath(out NamePtr));
-                string res = Marshal.PtrToStringAuto(NamePtr);
-                Marshal.FreeCoTaskMem(NamePtr);
-                return res;
+                IntPtr NamePtr = IntPtr.Zero;
+                try
+                {
+                    Marshal.ThrowExceptionForHR(_AudioSessionControl.GetIconPath(out NamePtr));
+                    return Marshal.PtrToStringUni(NamePtr);
+                }
+                finally
+                {
+                    Marshal.FreeCoTaskMem(NamePtr);
+                }
             }
         }
 
@@ -111,11 +133,16 @@ namespace CoreAudioApi
         {
             get
             {
-                IntPtr NamePtr;
-                Marshal.ThrowExceptionForHR(_AudioSessionControl.GetSessionIdentifier(out NamePtr));
-                string res = Marshal.PtrToStringAuto(NamePtr);
-                Marshal.FreeCoTaskMem(NamePtr);
-                return res;
+                IntPtr NamePtr = IntPtr.Zero;
+                try
+                {
+                    Marshal.ThrowExceptionForHR(_AudioSessionControl.GetSessionIdentifier(out NamePtr));
+                    return Marshal.PtrToStringUni(NamePtr);
+                }
+                finally
+                {
+                    Marshal.FreeCoTaskMem(NamePtr);
+                }
             }
         }
 
@@ -123,11 +150,16 @@ namespace CoreAudioApi
         {
             get
             {
-                IntPtr NamePtr;
-                Marshal.ThrowExceptionForHR(_AudioSessionControl.GetSessionInstanceIdentifier(out NamePtr));
-                string res = Marshal.PtrToStringAuto(NamePtr);
-                Marshal.FreeCoTaskMem(NamePtr);
-                return res;
+                IntPtr NamePtr = IntPtr.Zero;
+                try
+                {
+                    Marshal.ThrowExceptionForHR(_AudioSessionControl.GetSessionInstanceIdentifier(out NamePtr));
+                    return Marshal.PtrToStringUni(NamePtr);
+                }
+                finally
+                {
+                    Marshal.FreeCoTaskMem(NamePtr);
+                }
             }
         }
 
@@ -151,5 +183,26 @@ namespace CoreAudioApi
         }
 
 
+
+        protected override void DisposeResources()
+        {
+            Exception error = null;
+            try
+            {
+                foreach (IAudioSessionEvents consumer in _EventConsumers)
+                {
+                    try { Marshal.ThrowExceptionForHR(_AudioSessionControl.UnregisterAudioSessionNotification(consumer)); }
+                    catch (Exception ex) { if (error == null) error = ex; }
+                }
+                _EventConsumers.Clear();
+                DisposeAll(_AudioMeterInformation, _SimpleAudioVolume);
+                if (error != null) throw error;
+            }
+            finally
+            {
+                _AudioMeterInformation = null;
+                _SimpleAudioVolume = null;
+            }
+        }
     }
 }
