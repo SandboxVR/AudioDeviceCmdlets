@@ -150,11 +150,41 @@ namespace AudioDeviceCmdlets
                 throw new ArgumentException("No " + type + " AudioDevice found with the " + name + " role", ex);
             }
         }
+
+        // The caller owns the result, including when the endpoint is selected by index.
+        internal static MMDevice GetTarget(MMDeviceEnumerator enumerator, string id, int? index)
+        {
+            if (index != null)
+            {
+                using (MMDeviceCollection devices = enumerator.EnumerateAudioEndPoints(EDataFlow.eAll, EDeviceState.DEVICE_STATE_ACTIVE))
+                {
+                    if (index.Value < 1 || index.Value > devices.Count)
+                        throw new ArgumentException("No enabled AudioDevice found with that Index");
+                    return devices[index.Value - 1];
+                }
+            }
+
+            if (string.IsNullOrEmpty(id))
+                throw new ArgumentException("An AudioDevice ID is required.");
+            MMDevice device;
+            try { device = enumerator.GetDevice(id); }
+            catch (System.Runtime.InteropServices.COMException ex)
+            {
+                throw new ArgumentException("No enabled AudioDevice found with that ID", ex);
+            }
+            try
+            {
+                if (device.State != EDeviceState.DEVICE_STATE_ACTIVE)
+                    throw new ArgumentException("No enabled AudioDevice found with that ID");
+                return device;
+            }
+            catch { device.Dispose(); throw; }
+        }
     }
 
     // Get Cmdlet
     [Cmdlet(VerbsCommon.Get, "AudioDevice")]
-    public class GetAudioDevice : Cmdlet
+    public class GetAudioDevice : PSCmdlet
     {
         // Parameter called to list all devices
         [Parameter(Mandatory = true, Position = 0, ParameterSetName = "List")]
@@ -167,6 +197,9 @@ namespace AudioDeviceCmdlets
 
         // Parameter receiving the ID of the device to get
         [Parameter(Mandatory = true, Position = 0, ParameterSetName = "ID")]
+        [Parameter(Mandatory = true, Position = 0, ParameterSetName = "IDVolume")]
+        [Parameter(Mandatory = true, Position = 0, ParameterSetName = "IDMute")]
+        [ValidateNotNullOrEmpty]
         public string ID
         {
             get { return id; }
@@ -177,12 +210,23 @@ namespace AudioDeviceCmdlets
         // Parameter receiving the Index of the device to get
         [ValidateRange(1, 42)]
         [Parameter(Mandatory = true, Position = 0, ParameterSetName = "Index")]
+        [Parameter(Mandatory = true, Position = 0, ParameterSetName = "IndexVolume")]
+        [Parameter(Mandatory = true, Position = 0, ParameterSetName = "IndexMute")]
         public int? Index
         {
             get { return index; }
             set { index = value; }
         }
         private int? index;
+
+        // Selected-endpoint volume is a numeric percentage; mute is a boolean.
+        [Parameter(Mandatory = true, ParameterSetName = "IDVolume")]
+        [Parameter(Mandatory = true, ParameterSetName = "IndexVolume")]
+        public SwitchParameter Volume { get; set; }
+
+        [Parameter(Mandatory = true, ParameterSetName = "IDMute")]
+        [Parameter(Mandatory = true, ParameterSetName = "IndexMute")]
+        public SwitchParameter Mute { get; set; }
 
         // Parameter called to list the default communication playback device
         [Parameter(Mandatory = true, Position = 0, ParameterSetName = "PlaybackCommunication")]
@@ -307,6 +351,17 @@ namespace AudioDeviceCmdlets
             if (version) { WriteObject(AudioDeviceCommand.VersionText); return; }
             using (MMDeviceEnumerator enumerator = new MMDeviceEnumerator())
             {
+                if (ParameterSetName == "IDVolume" || ParameterSetName == "IndexVolume" ||
+                    ParameterSetName == "IDMute" || ParameterSetName == "IndexMute")
+                {
+                    using (MMDevice target = AudioDeviceCommand.GetTarget(enumerator, id, index))
+                    {
+                        if (ParameterSetName.EndsWith("Volume", StringComparison.Ordinal))
+                            WriteObject(target.AudioEndpointVolume.MasterVolumeLevelScalar * 100.0f);
+                        else WriteObject(target.AudioEndpointVolume.Mute);
+                    }
+                    return;
+                }
                 AudioDeviceCreationToolkit toolkit = new AudioDeviceCreationToolkit(enumerator);
                 if (list || !string.IsNullOrEmpty(id) || index != null)
                 {
@@ -359,10 +414,14 @@ namespace AudioDeviceCmdlets
 
     // Set Cmdlet
     [Cmdlet(VerbsCommon.Set, "AudioDevice")]
-    public class SetAudioDevice : Cmdlet
+    public class SetAudioDevice : PSCmdlet
     {
         // Parameter receiving the AudioDevice to set as default
         [Parameter(Mandatory = true, ParameterSetName = "InputObject", ValueFromPipeline = true)]
+        [Parameter(Mandatory = true, ParameterSetName = "InputObjectVolume", ValueFromPipeline = true)]
+        [Parameter(Mandatory = true, ParameterSetName = "InputObjectMute", ValueFromPipeline = true)]
+        [Parameter(Mandatory = true, ParameterSetName = "InputObjectMuteToggle", ValueFromPipeline = true)]
+        [ValidateNotNull]
         public AudioDevice InputObject
         {
             get { return inputObject; }
@@ -373,6 +432,10 @@ namespace AudioDeviceCmdlets
 
         // Parameter receiving the ID of the device to set as default
         [Parameter(Mandatory = true, Position = 0, ParameterSetName = "ID")]
+        [Parameter(Mandatory = true, Position = 0, ParameterSetName = "IDVolume")]
+        [Parameter(Mandatory = true, Position = 0, ParameterSetName = "IDMute")]
+        [Parameter(Mandatory = true, Position = 0, ParameterSetName = "IDMuteToggle")]
+        [ValidateNotNullOrEmpty]
         public string ID
         {
             get { return id; }
@@ -383,12 +446,33 @@ namespace AudioDeviceCmdlets
         // Parameter receiving the Index of the device to set as default
         [ValidateRange(1, 42)]
         [Parameter(Mandatory = true, Position = 0, ParameterSetName = "Index")]
+        [Parameter(Mandatory = true, Position = 0, ParameterSetName = "IndexVolume")]
+        [Parameter(Mandatory = true, Position = 0, ParameterSetName = "IndexMute")]
+        [Parameter(Mandatory = true, Position = 0, ParameterSetName = "IndexMuteToggle")]
         public int? Index
         {
             get { return index; }
             set { index = value; }
         }
         private int? index;
+
+        [Parameter(Mandatory = true, ParameterSetName = "IDVolume")]
+        [Parameter(Mandatory = true, ParameterSetName = "IndexVolume")]
+        [Parameter(Mandatory = true, ParameterSetName = "InputObjectVolume")]
+        [ValidateNotNull]
+        [ValidateRange(0, 100.0f)]
+        public float? Volume { get; set; }
+
+        [Parameter(Mandatory = true, ParameterSetName = "IDMute")]
+        [Parameter(Mandatory = true, ParameterSetName = "IndexMute")]
+        [Parameter(Mandatory = true, ParameterSetName = "InputObjectMute")]
+        [ValidateNotNull]
+        public bool? Mute { get; set; }
+
+        [Parameter(Mandatory = true, ParameterSetName = "IDMuteToggle")]
+        [Parameter(Mandatory = true, ParameterSetName = "IndexMuteToggle")]
+        [Parameter(Mandatory = true, ParameterSetName = "InputObjectMuteToggle")]
+        public SwitchParameter MuteToggle { get; set; }
 
         // Parameter called to set the default communication playback device's mute state
         [Parameter(Mandatory = true, Position = 0, ParameterSetName = "PlaybackCommunicationMute")]
@@ -539,8 +623,23 @@ namespace AudioDeviceCmdlets
             if (defaultOnly.ToBool() && communicationOnly.ToBool())
                 throw new ArgumentException("Impossible to do both DefaultOnly and CommunicationOnly at the same time.");
             if (version) { WriteObject(AudioDeviceCommand.VersionText); return; }
+            if (Volume.HasValue && (float.IsNaN(Volume.Value) || float.IsInfinity(Volume.Value)))
+                throw new ArgumentException("Volume must be a finite percentage between 0 and 100.");
             using (MMDeviceEnumerator enumerator = new MMDeviceEnumerator())
             {
+                if (ParameterSetName == "IDVolume" || ParameterSetName == "IndexVolume" || ParameterSetName == "InputObjectVolume" ||
+                    ParameterSetName == "IDMute" || ParameterSetName == "IndexMute" || ParameterSetName == "InputObjectMute" ||
+                    ParameterSetName == "IDMuteToggle" || ParameterSetName == "IndexMuteToggle" || ParameterSetName == "InputObjectMuteToggle")
+                {
+                    using (MMDevice endpoint = AudioDeviceCommand.GetTarget(enumerator, inputObject != null ? inputObject.ID : id, index))
+                    {
+                        AudioEndpointVolume volume = endpoint.AudioEndpointVolume;
+                        if (Volume.HasValue) volume.MasterVolumeLevelScalar = Volume.Value / 100.0f;
+                        else if (Mute.HasValue) volume.Mute = Mute.Value;
+                        else if (MuteToggle.ToBool()) volume.Mute = !volume.Mute;
+                    }
+                    return;
+                }
                 AudioDeviceCreationToolkit toolkit = new AudioDeviceCreationToolkit(enumerator);
                 if (inputObject != null || !string.IsNullOrEmpty(id) || index != null)
                 {

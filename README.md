@@ -13,6 +13,8 @@ Set default communication audio device (playback/recording)
 Set volume and mute state of default audio device (playback/recording)  
 Set volume and mute state of default communication audio device (playback/recording)
 
+Get and set volume and mute state of a selected playback or recording device by ID or index
+
 
 ## Installation
 Run as administrator
@@ -73,6 +75,69 @@ Write-AudioDevice -RecordingMeter		# Write the default recording device's power 
 Write-AudioDevice -RecordingStream		# Write the default recording device's power output on 100 as a stream of <int>
 ```
 
+
+## Selected-device volume and mute
+
+Use `-ID` or `-Index` with `-Volume` or `-Mute` to control any enabled playback
+or recording endpoint, including a microphone or a device that is not the default.
+Volume uses percentages from 0 to 100. The selected-device volume getter returns
+a numeric `float`; the mute getter returns `bool`. Targeted setters produce no
+output and do not change default-device assignments. Existing default-device
+commands keep their behavior and output formats.
+
+```PowerShell
+Get-AudioDevice -ID $speakerId -Volume
+Get-AudioDevice -ID $microphoneId -Mute
+Set-AudioDevice -ID $speakerId -Volume 60
+Set-AudioDevice -ID $microphoneId -Volume 100
+Set-AudioDevice -ID $microphoneId -Mute $false
+Set-AudioDevice -ID $speakerId -MuteToggle
+Get-AudioDevice -Index 1 -Volume
+Set-AudioDevice -Index 1 -Mute $false
+
+$device = Get-AudioDevice -ID $microphoneId
+try { $device | Set-AudioDevice -Volume 80 }
+finally { $device.Dispose() }
+```
+
+Setters also accept `-InputObject`. They acquire their own temporary endpoint;
+the caller retains ownership of the supplied `AudioDevice`. Volume, mute and
+mute-toggle are separate operations. They cannot be combined with `-DefaultOnly`
+or `-CommunicationOnly`. `Set-AudioDevice -ID $id` without a volume/mute option
+continues to assign that device as the default.
+
+For silica's configured adapters, whose `Volume` fields use the 0-to-1 scale,
+the following function can run in the main service loop:
+
+```PowerShell
+function Restore-AudioDeviceSettings($adapters) {
+    foreach ($adapter in $adapters) {
+        $targetPercent = [single]($adapter.Volume * 100)
+        $currentPercent = Get-AudioDevice -ID $adapter.ID -Volume
+        if ([Math]::Abs($currentPercent - $targetPercent) -gt 0.1) {
+            Set-AudioDevice -ID $adapter.ID -Volume $targetPercent
+        }
+        if (Get-AudioDevice -ID $adapter.ID -Mute) {
+            Set-AudioDevice -ID $adapter.ID -Mute $false
+        }
+    }
+}
+```
+
+This replaces the custom `AudioControl.AudioEndpointVolume` polling helper.
+Calling it every two seconds preserves silica's existing enforcement cadence
+without a separate volume-monitor runspace. It still needs periodic invocation
+to restore settings changed by other applications. The helper's default-device
+assignment can use the existing `Set-AudioDevice -ID` command; dispose its returned
+`AudioDevice` as described below.
+
+Verify the new API on a Windows host with active playback and recording endpoints:
+
+```PowerShell
+powershell.exe -NoProfile -File .\tests\Test-DeviceVolume.ps1
+# Also exercise setters, briefly reducing volume and changing mute, with restoration:
+powershell.exe -NoProfile -File .\tests\Test-DeviceVolume.ps1 -ExerciseWrites
+```
 
 ## Build Cmdlet from source
 
