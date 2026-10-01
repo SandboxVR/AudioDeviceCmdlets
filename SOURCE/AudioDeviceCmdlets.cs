@@ -129,7 +129,7 @@ namespace AudioDeviceCmdlets
     internal static class AudioDeviceCommand
     {
         internal const string VersionText = @"
-  AudioDeviceCmdlets v3.1.0.2
+  AudioDeviceCmdlets v3.2.0.0
 
   Copyright (c) 2016-2022 Francois Gendron <fg@frgn.ca>
   MIT License
