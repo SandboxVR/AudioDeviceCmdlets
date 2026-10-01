@@ -29,7 +29,8 @@ namespace CoreAudioApi
 {
     public class AudioMeterInformationChannels
     {
-        IAudioMeterInformation _AudioMeterInformation;
+        private AudioMeterInformation _Parent;
+        private IAudioMeterInformation _AudioMeterInformation { get { return _Parent._AudioMeterInformation; } }
 
         public int Count
         {
@@ -47,15 +48,21 @@ namespace CoreAudioApi
             {
                 float[] peakValues = new float[Count];
                 GCHandle Params = GCHandle.Alloc(peakValues, GCHandleType.Pinned);
-                Marshal.ThrowExceptionForHR(_AudioMeterInformation.GetChannelsPeakValues(peakValues.Length, Params.AddrOfPinnedObject()));
-                Params.Free();
+                try
+                {
+                    Marshal.ThrowExceptionForHR(_AudioMeterInformation.GetChannelsPeakValues(peakValues.Length, Params.AddrOfPinnedObject()));
+                }
+                finally
+                {
+                    Params.Free();
+                }
                 return peakValues[index];
             }
         }
 
-        internal AudioMeterInformationChannels(IAudioMeterInformation parent)
+        internal AudioMeterInformationChannels(AudioMeterInformation parent)
         {
-            _AudioMeterInformation = parent;
+            _Parent = parent;
         }
     }
 }

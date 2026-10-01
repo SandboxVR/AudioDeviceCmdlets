@@ -127,6 +127,94 @@ Build -> Build Solution
 </details>
 
 
+## Resource lifetimes in long-running jobs
+
+Temporary devices, enumerators, collections, policy clients, meters and property
+stores are disposed by the cmdlets, including failed operations and interrupted
+meter/stream loops. Volume reads and writes do not register notification callbacks.
+Subscribing to `OnVolumeNotification` registers one callback; removing the last
+handler or disposing the volume unregisters it. The callback holds a weak reference
+so an abandoned volume subscription can be finalized.
+
+`Get-AudioDevice` and default-device setters return an `AudioDevice` with a usable
+`Device`. The caller owns that returned object. Dispose it when finished if prompt
+release is needed, especially when retaining devices in a service:
+
+```PowerShell
+$device = Get-AudioDevice -Playback
+try {
+    $device.Device.AudioEndpointVolume.MasterVolumeLevelScalar
+}
+finally {
+    $device.Dispose()
+}
+```
+
+CoreAudioApi wrappers also implement `IDisposable`. An `MMDevice` owns its cached
+volume, meter, property store and session manager. A session manager owns its
+session collection. Devices and sessions retrieved from collection indexers belong
+to the caller. Session volume/meter interfaces borrow the session's COM reference;
+disposing the session invalidates those interfaces and unregisters its event consumers.
+Collections and enumerators do not dispose independently returned devices/sessions.
+
+Property-store indexers copy values into managed snapshots and clear the native
+`PROPVARIANT` immediately. `PropertyStore.GetValue(int)` returns a raw owning
+`PropVariant`; callers must dispose it once and avoid disposing multiple struct
+copies. Session strings and pinned channel buffers are freed in `finally` blocks.
+Failed COM acquisitions and wrapper constructors also release their acquired
+references. Releases balance one acquisition rather than forcibly releasing a
+shared COM wrapper.
+
+Native ownership follows Microsoft's documentation for
+[PropVariantClear](https://learn.microsoft.com/en-us/windows/win32/api/propidl/nf-propidl-propvariantclear),
+[volume callback registration](https://learn.microsoft.com/en-us/windows/win32/api/endpointvolume/nf-endpointvolume-iaudioendpointvolume-registercontrolchangenotify)
+and [ReleaseComObject](https://learn.microsoft.com/en-us/dotnet/api/system.runtime.interopservices.marshal.releasecomobject).
+
+Build and validate on Windows with .NET Framework 4.x and Windows PowerShell 5.1:
+
+```PowerShell
+.\Build.ps1
+.\tests\Test-ResourceLifetimes.ps1
+powershell.exe -NoProfile -File .\tests\Test-Cmdlets.ps1
+powershell.exe -NoProfile -File .\tests\Test-LongRunning.ps1 -Iterations 2000
+```
+
+The DLL is written to `artifacts\AudioDeviceCmdlets.dll`. Resource tests cover x86
+and x64, native property cleanup, callback retention, failing unregister/factory
+operations, pinned-buffer failures and session ownership. Live tests require active
+playback and recording defaults and only read audio state. Run the long-running test
+in a fresh Windows PowerShell process; use `-AssemblyPath <original.dll>
+-AllowLeakingBaseline` in a separate process to compare an older DLL. Its memory
+threshold is a smoke check, not a substitute for a multi-day service soak.
+
+For extended comparisons, build both frozen harnesses and start the background suite:
+
+```PowerShell
+.\tests\Build-SoakHarness.ps1
+.\tests\Build-SoakHarness.ps1 -Baseline
+.\tests\Start-ExtendedSoak.ps1
+.\tests\Get-SoakStatus.ps1 -RunDirectory <printed-run-directory>
+python .\tests\Analyze-Soak.py <printed-run-directory>
+```
+
+The extended suite runs 100,000 cmdlet cycles, 43,200 wrapper-churn cycles and
+43,200 cached-endpoint service cycles against each build, plus a paced 24-hour
+Windows PowerShell run that imports the patched DLL. Original-build stress runs
+stop at 256 MiB private memory; patched runs stop at 512 MiB. These caps protect
+the host during intentional leak reproduction. Workers write incremental memory,
+handle and GC samples directly to disk, with fixed-size wrapper tracking. No
+explicit GC is performed during measured loops; start/end GC snapshots are
+labelled separately. All workloads only read audio state. A separate host monitor
+records Windows audio-service memory and prevents automatic system sleep until
+the workers exit; display sleep remains enabled. The launcher rejects duplicate
+runs while any recorded worker is still active.
+
+Accelerated cycles test allocation volume; the paced run tests elapsed time and
+the actual PowerShell host. Neither recreates an unknown historic silica service
+revision, its job-output buffers, registry mutations or hardware changes. Inspect
+sampling gaps before interpreting a paced test as uninterrupted 24-hour coverage.
+
+
 ## Donation
 
 <details>

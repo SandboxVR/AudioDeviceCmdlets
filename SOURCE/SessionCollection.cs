@@ -29,12 +29,13 @@ using System.Runtime.InteropServices;
 
 namespace CoreAudioApi
 {
-    public class SessionCollection
+    public class SessionCollection : ComObject
     {
-        IAudioSessionEnumerator _AudioSessionEnumerator;
+        private IAudioSessionEnumerator _AudioSessionEnumerator { get { return GetInterface<IAudioSessionEnumerator>(); } }
         internal SessionCollection(IAudioSessionEnumerator realEnumerator)
+            : base(realEnumerator)
         {
-            _AudioSessionEnumerator = realEnumerator;
+
         }
 
         public AudioSessionControl this[int index]
@@ -42,7 +43,7 @@ namespace CoreAudioApi
             get
             {
                 IAudioSessionControl2 _Result;
-                Marshal.ThrowExceptionForHR(_AudioSessionEnumerator.GetSession(index, out _Result));
+                _Result = CheckResult(_AudioSessionEnumerator.GetSession(index, out _Result), _Result);
                 return new AudioSessionControl(_Result);
             }
         }

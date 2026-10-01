@@ -29,26 +29,44 @@ using System.Runtime.InteropServices;
 
 namespace CoreAudioApi
 {
-    public class AudioSessionManager
+    public class AudioSessionManager : ComObject
     {
-        private IAudioSessionManager2 _AudioSessionManager;
+        private IAudioSessionManager2 _AudioSessionManager { get { return GetInterface<IAudioSessionManager2>(); } }
         private SessionCollection _Sessions;
         
         internal AudioSessionManager(IAudioSessionManager2 realAudioSessionManager)
+            : base(realAudioSessionManager)
         {
-            _AudioSessionManager = realAudioSessionManager;
-            IAudioSessionEnumerator _SessionEnum ;
-            Marshal.ThrowExceptionForHR(_AudioSessionManager.GetSessionEnumerator(out _SessionEnum));
-            _Sessions = new SessionCollection(_SessionEnum);
+            try
+            {
+                IAudioSessionEnumerator _SessionEnum ;
+                _SessionEnum = CheckResult(_AudioSessionManager.GetSessionEnumerator(out _SessionEnum), _SessionEnum);
+                _Sessions = new SessionCollection(_SessionEnum);
+            }
+            catch
+            {
+                Dispose();
+                throw;
+            }
         }
 
         public SessionCollection Sessions
         {
             get
             {
+                ThrowIfDisposed();
                 return _Sessions;
             }
         }
 
+
+        protected override void DisposeResources()
+        {
+            try { DisposeAll(_Sessions); }
+            finally
+            {
+                _Sessions = null;
+            }
+        }
     }
 }

@@ -34,15 +34,17 @@ namespace CoreAudioApi
     // to show up in the public API. 
     internal class AudioEndpointVolumeCallback : IAudioEndpointVolumeCallback    
     {
-        private AudioEndpointVolume _Parent;
+        private WeakReference _Parent;
         
         internal AudioEndpointVolumeCallback(AudioEndpointVolume parent)
         {
-            _Parent = parent;
+            _Parent = new WeakReference(parent);
         }
         
         [PreserveSig] public int OnNotify(IntPtr NotifyData)
         {
+            AudioEndpointVolume parent = _Parent.Target as AudioEndpointVolume;
+            if (parent == null) return 0;
             //Since AUDIO_VOLUME_NOTIFICATION_DATA is dynamic in length based on the
             //number of audio channels available we cannot just call PtrToStructure 
             //to get all data, thats why it is split up into two steps, first the static
@@ -66,7 +68,7 @@ namespace CoreAudioApi
 
             //Create combined structure and Fire Event in parent class.
             AudioVolumeNotificationData NotificationData = new AudioVolumeNotificationData(data.guidEventContext, data.bMuted, data.fMasterVolume, voldata);
-            _Parent.FireNotification(NotificationData);
+            parent.FireNotification(NotificationData);
             return 0; //S_OK
         }
     }

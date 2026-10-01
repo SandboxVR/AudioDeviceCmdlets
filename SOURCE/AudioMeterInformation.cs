@@ -27,27 +27,35 @@ using System.Runtime.InteropServices;
 
 namespace CoreAudioApi
 {
-    public class AudioMeterInformation
+    public class AudioMeterInformation : ComObject
     {
-        private IAudioMeterInformation _AudioMeterInformation;
+        internal IAudioMeterInformation _AudioMeterInformation { get { return GetInterface<IAudioMeterInformation>(); } }
         private EEndpointHardwareSupport _HardwareSupport;
         private AudioMeterInformationChannels _Channels;
 
-        internal AudioMeterInformation(IAudioMeterInformation realInterface)
+        internal AudioMeterInformation(IAudioMeterInformation realInterface, bool ownsReference = true)
+            : base(realInterface, ownsReference)
         {
-            int HardwareSupp;
+            try
+            {
+                int HardwareSupp;
 
-            _AudioMeterInformation = realInterface;
-            Marshal.ThrowExceptionForHR(_AudioMeterInformation.QueryHardwareSupport(out HardwareSupp));
-            _HardwareSupport = (EEndpointHardwareSupport)HardwareSupp;
-            _Channels = new AudioMeterInformationChannels(_AudioMeterInformation);
-
+                Marshal.ThrowExceptionForHR(_AudioMeterInformation.QueryHardwareSupport(out HardwareSupp));
+                _HardwareSupport = (EEndpointHardwareSupport)HardwareSupp;
+                _Channels = new AudioMeterInformationChannels(this);
+            }
+            catch
+            {
+                Dispose();
+                throw;
+            }
         }
 
         public AudioMeterInformationChannels PeakValues
         {
             get
             {
+                ThrowIfDisposed();
                 return _Channels;
             }
         }
@@ -56,6 +64,7 @@ namespace CoreAudioApi
         {
             get
             {
+                ThrowIfDisposed();
                 return _HardwareSupport;
             }
         }

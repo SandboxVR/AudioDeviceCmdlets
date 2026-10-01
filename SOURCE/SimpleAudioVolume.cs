@@ -29,12 +29,13 @@ using System.Runtime.InteropServices;
 
 namespace CoreAudioApi
 {
-    public class SimpleAudioVolume
+    public class SimpleAudioVolume : ComObject
     {
-        ISimpleAudioVolume _SimpleAudioVolume;
-        internal SimpleAudioVolume(ISimpleAudioVolume realSimpleVolume)
+        private ISimpleAudioVolume _SimpleAudioVolume { get { return GetInterface<ISimpleAudioVolume>(); } }
+        internal SimpleAudioVolume(ISimpleAudioVolume realSimpleVolume, bool ownsReference = true)
+            : base(realSimpleVolume, ownsReference)
         {
-            _SimpleAudioVolume = realSimpleVolume;
+
         }
 
         public float MasterVolume

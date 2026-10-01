@@ -27,9 +27,9 @@ using CoreAudioApi.Interfaces;
 
 namespace CoreAudioApi
 {
-    public class MMDeviceCollection
+    public class MMDeviceCollection : ComObject
     {
-        private IMMDeviceCollection _MMDeviceCollection;
+        private IMMDeviceCollection _MMDeviceCollection { get { return GetInterface<IMMDeviceCollection>(); } }
 
         public int Count
         {
@@ -46,14 +46,15 @@ namespace CoreAudioApi
             get
             {
                 IMMDevice result;
-                _MMDeviceCollection.Item((uint)index, out result);
+                result = CheckResult(_MMDeviceCollection.Item((uint)index, out result), result);
                 return new MMDevice(result);
             }
         }
 
         internal MMDeviceCollection(IMMDeviceCollection parent)
+            : base(parent)
         {
-            _MMDeviceCollection = parent;
+
         }
     }
 }

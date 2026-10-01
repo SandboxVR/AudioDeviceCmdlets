@@ -30,12 +30,20 @@ namespace CoreAudioApi
     public class PropertyStoreProperty
     {
         private PropertyKey _PropertyKey;
-        private PropVariant _PropValue;
+        private object _Value;
 
         internal PropertyStoreProperty(PropertyKey key, PropVariant value)
         {
             _PropertyKey = key;
-            _PropValue = value;
+            // Copy strings/blobs to managed memory before freeing native storage.
+            try
+            {
+                _Value = value.Value;
+            }
+            finally
+            {
+                value.Dispose();
+            }
         }
 
         public PropertyKey Key
@@ -50,7 +58,7 @@ namespace CoreAudioApi
         {
             get
             {
-                return _PropValue.Value;
+                return _Value;
             }
         }
     }
